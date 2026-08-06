@@ -1,19 +1,19 @@
-from app.scraper.profile_scraper import scrape_profile
+from app.generator.message_builder import build_prompt
+from app.generator.tone_templates import CASUAL
+from app.llm.gemini_client import generate_message
 
-profile_text = """
-John Doe
+prompt = build_prompt(
+    profile_name="John Doe",
+    headline="AI Engineer",
+    about="Working on LLM-powered applications.",
+    recent_activity=[
+        "Shared a post about LangGraph.",
+        "Published an article on RAG.",
+    ],
+    product_description="An AI tool that helps founders create personalized LinkedIn outreach.",
+    tone_instruction=CASUAL,
+)
 
-AI Engineer at Google
+message = generate_message(prompt)
 
-About
-Building AI-powered applications using LLMs and Cloud technologies.
-
-Recent Activity
-Published an article on AI Agents.
-Spoke at PyCon 2026.
-Open-sourced an AI project.
-"""
-
-profile = scrape_profile(profile_text)
-
-print(profile)
+print(message)
