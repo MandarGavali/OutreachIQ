@@ -13,4 +13,6 @@ class OutreachMessage(BaseModel):
 
 
 class BatchResponse(BaseModel):
-    results: list[OutreachMessage]
+    results: list[OutreachMessage] = Field(
+        default_factory=list
+    )
