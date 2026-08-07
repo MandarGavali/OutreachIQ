@@ -10,7 +10,7 @@ class Tone(str, Enum):
 
 
 class OutreachRequest(BaseModel):
-    profile_url: HttpUrl
+    profile_url: str
     product_description: str = Field(
         ...,
         min_length=20,
@@ -24,6 +24,6 @@ class BatchRequest(BaseModel):
     requests: list[OutreachRequest] = Field(
         ...,
         min_length=1,
-        max_length=100,
+        max_length=1000,
         description="List of outreach requests.",
     )

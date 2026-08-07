@@ -1,3 +1,20 @@
+from google import genai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+response = client.models.generate_content(
+    model="gemini-3.1-flash-lite",
+    contents="Say hello."
+)
+
+print(response.text)
+
+
+"""
 from fastapi import APIRouter, HTTPException
 
 from app.agent.agent_core import generate_outreach
@@ -34,3 +51,5 @@ async def generate_batch(request: BatchRequest):
             continue
 
     return BatchResponse(results=results)
+
+"""

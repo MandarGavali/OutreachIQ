@@ -69,7 +69,7 @@ PROFILE INFORMATION
 Name: {profile.name}
 Headline: {profile.headline}
 Summary:
-{profile.summary}
+{profile.about or ''}
 
 Recent Activity:
 {profile.recent_activity}
