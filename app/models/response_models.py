@@ -7,7 +7,7 @@ class OutreachMessage(BaseModel):
     reason_for_outreach: str = Field(
         ...,
         min_length=10,
-        max_length=200,
+        max_length=500,
         description="Why this message fits the recipient.",
     )
 

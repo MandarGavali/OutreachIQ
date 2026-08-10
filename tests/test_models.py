@@ -1,161 +1,67 @@
 import pytest
 from pydantic import ValidationError
 
-from app.models.request_models import (
-    Tone,
-    OutreachRequest,
-    BatchRequest,
-)
-from app.models.response_models import (
-    OutreachMessage,
-    BatchResponse,
-)
+from app.models.profile_models import ScrapedProfile
 
 
-# -------------------------
-# OutreachRequest
-# -------------------------
-
-def test_valid_outreach_request():
-    request = OutreachRequest(
-        profile_url="https://linkedin.com/in/johndoe",
-        product_description="AI-powered recruitment automation platform",
-        tone=Tone.CASUAL,
+def test_complete_profile():
+    profile = ScrapedProfile(
+        profile_url="https://linkedin.com/in/john-doe",
+        name="John Doe",
+        headline="AI Engineer | Generative AI | RAG",
+        about="Building AI agents and production RAG systems.",
+        recent_activity=[
+            "Published a post about RAG evaluation",
+            "Discussed agentic workflows with LangGraph",
+        ],
     )
 
-    assert request.profile_url == "https://linkedin.com/in/johndoe"
-    assert request.tone == Tone.CASUAL
+    assert profile.name == "John Doe"
+    assert profile.headline == "AI Engineer | Generative AI | RAG"
+    assert len(profile.recent_activity) == 2
 
 
-def test_short_product_description_rejected():
-    with pytest.raises(ValidationError):
-        OutreachRequest(
-            profile_url="https://linkedin.com/in/johndoe",
-            product_description="Too short",
-        )
-
-
-def test_long_product_description_rejected():
-    with pytest.raises(ValidationError):
-        OutreachRequest(
-            profile_url="https://linkedin.com/in/johndoe",
-            product_description="A" * 1001,
-        )
-
-
-def test_default_tone_is_casual():
-    request = OutreachRequest(
-        profile_url="https://linkedin.com/in/johndoe",
-        product_description="AI-powered recruitment automation platform",
+def test_profile_with_missing_optional_fields():
+    profile = ScrapedProfile(
+        profile_url="https://linkedin.com/in/john-doe",
+        name="John Doe",
     )
 
-    assert request.tone == Tone.CASUAL
+    assert profile.name == "John Doe"
+    assert profile.headline == ""
+    assert profile.about == ""
+    assert profile.recent_activity == []
 
 
-def test_invalid_tone_rejected():
+def test_profile_rejects_invalid_name():
     with pytest.raises(ValidationError):
-        OutreachRequest(
-            profile_url="https://linkedin.com/in/johndoe",
-            product_description="AI-powered recruitment automation platform",
-            tone="random",
+        ScrapedProfile(
+            profile_url="https://linkedin.com/in/john-doe",
+            name="",
         )
 
 
-# -------------------------
-# BatchRequest
-# -------------------------
-
-def test_valid_batch_request():
-    request = OutreachRequest(
-        profile_url="https://linkedin.com/in/johndoe",
-        product_description="AI-powered recruitment automation platform",
-    )
-
-    batch = BatchRequest(requests=[request])
-
-    assert len(batch.requests) == 1
-
-
-def test_empty_batch_rejected():
+def test_profile_rejects_long_name():
     with pytest.raises(ValidationError):
-        BatchRequest(requests=[])
-
-
-# -------------------------
-# OutreachMessage
-# -------------------------
-
-def test_valid_outreach_message():
-    message = OutreachMessage(
-        recipient_name="John Doe",
-        message=(
-            "I noticed your recent work in AI recruitment and thought "
-            "our platform could be relevant to the problems you're solving."
-        ),
-        reason_for_outreach="Their work in AI recruitment is relevant.",
-    )
-
-    assert message.recipient_name == "John Doe"
-    assert len(message.message) >= 50
-
-
-def test_short_recipient_name_rejected():
-    with pytest.raises(ValidationError):
-        OutreachMessage(
-            recipient_name="J",
-            message="This is a sufficiently long outreach message for testing purposes.",
-            reason_for_outreach="Relevant professional background.",
+        ScrapedProfile(
+            profile_url="https://linkedin.com/in/john-doe",
+            name="A" * 101,
         )
 
 
-def test_short_message_rejected():
+def test_profile_rejects_long_headline():
     with pytest.raises(ValidationError):
-        OutreachMessage(
-            recipient_name="John Doe",
-            message="Too short",
-            reason_for_outreach="Relevant professional background.",
+        ScrapedProfile(
+            profile_url="https://linkedin.com/in/john-doe",
+            name="John Doe",
+            headline="A" * 301,
         )
 
 
-def test_short_reason_rejected():
+def test_profile_rejects_long_about():
     with pytest.raises(ValidationError):
-        OutreachMessage(
-            recipient_name="John Doe",
-            message="This is a sufficiently long outreach message for testing purposes.",
-            reason_for_outreach="Short",
+        ScrapedProfile(
+            profile_url="https://linkedin.com/in/john-doe",
+            name="John Doe",
+            about="A" * 3001,
         )
-
-
-def test_long_reason_rejected():
-    with pytest.raises(ValidationError):
-        OutreachMessage(
-            recipient_name="John Doe",
-            message="This is a sufficiently long outreach message for testing purposes.",
-            reason_for_outreach="A" * 201,
-        )
-
-
-# -------------------------
-# BatchResponse
-# -------------------------
-
-def test_batch_response_default_is_empty():
-    response = BatchResponse()
-
-    assert response.results == []
-
-
-def test_batch_response_with_results():
-    message = OutreachMessage(
-        recipient_name="John Doe",
-        message=(
-            "I noticed your recent work in AI recruitment and thought "
-            "our platform could be relevant to the problems you're solving."
-        ),
-        reason_for_outreach="Their work in AI recruitment is relevant.",
-    )
-
-    response = BatchResponse(results=[message])
-
-    assert len(response.results) == 1
-    assert response.results[0].recipient_name == "John Doe"

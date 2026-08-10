@@ -1,13 +1,26 @@
 from app.models.profile_models import ScrapedProfile
 
 
-def parse_profile(profile_text: str) -> ScrapedProfile:
+def parse_profile(
+    profile_text: str,
+    profile_url: str,
+) -> ScrapedProfile:
     """
     Convert raw profile text into a structured ScrapedProfile object.
     """
 
     # Remove empty lines and extra spaces
-    lines = [line.strip() for line in profile_text.splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in profile_text.splitlines()
+        if line.strip()
+    ]
+
+    # Validate minimum required data
+    if len(lines) < 2:
+        raise ValueError(
+            "Profile text must contain at least name and headline"
+        )
 
     # Basic extraction
     name = lines[0]
@@ -17,8 +30,6 @@ def parse_profile(profile_text: str) -> ScrapedProfile:
     recent_activity = []
 
     # Extract "About" section
-    about = None
-
     if "About" in lines:
         about_index = lines.index("About") + 1
 
@@ -38,9 +49,10 @@ def parse_profile(profile_text: str) -> ScrapedProfile:
     if "Recent Activity" in lines:
         activity_index = lines.index("Recent Activity")
 
-        recent_activity = lines[activity_index + 1 :]
+        recent_activity = lines[activity_index + 1:]
 
     return ScrapedProfile(
+        profile_url=profile_url,
         name=name,
         headline=headline,
         about=about,

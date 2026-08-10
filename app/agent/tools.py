@@ -13,7 +13,7 @@ def scrape_profile(profile_url: str) -> dict:
     Later it will contain the actual LinkedIn URL.
     """
 
-    profile = parse_profile(profile_url)
+    profile = parse_profile(profile_url, profile_url)
 
     return profile.model_dump()
 
@@ -44,6 +44,7 @@ def generate_outreach(
     Generate a personalized LinkedIn outreach message.
     """
     profile = ScrapedProfile(
+        profile_url="https://linkedin.com/in/unknown",
         name=profile_name,
         headline=headline,
         about=about,

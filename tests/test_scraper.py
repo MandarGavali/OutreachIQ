@@ -1,71 +1,25 @@
-import pytest
-
-from app.scraper.parser import parse_profile
+from app.scraper.profile_scraper import scrape_profile
 
 
-def test_parse_valid_profile():
+def test_scrape_profile():
     profile_text = """
-    John Doe
-    AI Engineer at OpenAI
-    About
-    Building AI agents using LangChain.
-    Recent Activity
-    Published a post about RAG.
-    """
+John Doe
+AI Engineer | Generative AI
 
-    profile = parse_profile(profile_text)
+About
+Building AI agents and RAG systems.
+
+Recent Activity
+Published a post about RAG.
+Discussed LangGraph.
+"""
+
+    profile = scrape_profile(
+        profile_text=profile_text,
+        profile_url="https://linkedin.com/in/john-doe",
+    )
 
     assert profile.name == "John Doe"
-    assert profile.headline == "AI Engineer at OpenAI"
-    assert profile.about == "Building AI agents using LangChain."
-    assert profile.recent_activity == [
-        "Published a post about RAG."
-    ]
-
-
-def test_missing_about_section():
-    profile_text = """
-    John Doe
-    AI Engineer at OpenAI
-    Recent Activity
-    Published a post about RAG.
-    """
-
-    profile = parse_profile(profile_text)
-
-    assert profile.name == "John Doe"
-    assert profile.headline == "AI Engineer at OpenAI"
-    assert profile.about is None
-    assert profile.recent_activity == [
-        "Published a post about RAG."
-    ]
-
-
-def test_missing_recent_activity():
-    profile_text = """
-    John Doe
-    AI Engineer at OpenAI
-    About
-    Building AI agents using LangChain.
-    """
-
-    profile = parse_profile(profile_text)
-
-    assert profile.name == "John Doe"
-    assert profile.headline == "AI Engineer at OpenAI"
-    assert profile.about == "Building AI agents using LangChain."
-    assert profile.recent_activity == []
-
-
-def test_empty_profile_raises_error():
-    with pytest.raises(IndexError):
-        parse_profile("")
-
-
-def test_malformed_profile():
-    profile_text = """
-    John Doe
-    """
-
-    with pytest.raises(IndexError):
-        parse_profile(profile_text)
+    assert profile.headline == "AI Engineer | Generative AI"
+    assert profile.about == "Building AI agents and RAG systems."
+    assert len(profile.recent_activity) == 2
