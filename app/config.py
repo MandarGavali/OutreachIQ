@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     PROFILE_CACHE_TTL_SECONDS: float = 300.0   # 5 minutes
     PROFILE_MAX_BATCH_SIZE: int = 10
 
+    # --- Agent ---
+    AGENT_MAX_TURNS: int = 6
+
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

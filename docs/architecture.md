@@ -4,9 +4,9 @@
 
 OutreachIQ is an AI-powered LinkedIn outreach message generator.
 
-The application accepts profile information, product/service
-information, and a desired tone. It uses a LangChain agent to
-coordinate profile parsing and personalized message generation.
+The application accepts a profile URL, product/service description, and a
+desired tone. A custom agent loop coordinates profile acquisition and
+personalized message generation.
 
 ## Request Flow
 
@@ -20,26 +20,24 @@ FastAPI
 Pydantic OutreachRequest
  │
  ▼
-LangChain Agent
+Custom Agent Core (OutreachAgent)
  │
- ├───────────────┐
- ▼               ▼
-Scrape Profile   Generate Outreach
- Tool             Tool
- │               │
- ▼               ▼
-Parser       Message Builder
- │               │
- ▼               ▼
-ScrapedProfile   Gemini LLM
- │               │
- └───────┬───────┘
-         ▼
-   OutreachMessage
-         │
-         ▼
-   FastAPI Response
-
+ ├─── Turn 1: LLM → scrape_profile ──────► ProfileScraper
+ │                                              │
+ │                                         ScrapedProfile
+ │                                              │
+ ├─── Turn 2: LLM → generate_message ─────► MessageBuilder → Gemini LLM
+ │                                              │
+ │                                         OutreachMessage
+ │
+ ├─── Turn 3: LLM → Final JSON response
+ │
+ ▼
+OutreachMessage (validated Pydantic model)
+ │
+ ▼
+FastAPI Response
+```
 
 
 Current Limitations:
