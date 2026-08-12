@@ -26,7 +26,15 @@ Custom Agent Core (OutreachAgent)
  │                                              │
  │                                         ScrapedProfile
  │                                              │
- ├─── Turn 2: LLM → generate_message ─────► MessageBuilder → Gemini LLM
+ ├─── Turn 2: LLM → generate_message ─────► Self-Correction Orchestrator
+ │                                              │
+ │                                          Message Generation
+ │                                              │
+ │                                          Self-Correction Evaluator
+ │                                              │
+ │                                          Quality Gate
+ │                                           ├── PASS → Final
+ │                                           └── FAIL → Feedback → Regenerate → Evaluate
  │                                              │
  │                                         OutreachMessage
  │

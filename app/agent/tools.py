@@ -26,7 +26,6 @@ import logging
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, ValidationError
 
-from app.generator.message_builder import build_prompt
 from app.llm.gemini_client import generate_message as _generate_message_llm
 from app.models.profile_models import ScrapedProfile
 from app.models.request_models import Tone
@@ -142,6 +141,10 @@ def _run_generate_message(
     """
     Generate a personalized outreach message using the existing generator.
 
+    Phase 3: routes through the self-correction service (generate → evaluate →
+    optionally regenerate → return best result).  When self-correction is
+    disabled via settings, falls back to single-generation behaviour.
+
     Returns a JSON-serializable dict on success.
     Returns a structured error dict on failure so the agent can recover.
     """
@@ -160,16 +163,34 @@ def _run_generate_message(
             recent_activity=recent_activity if isinstance(recent_activity, list) else [],
         )
 
-        prompt = build_prompt(
+        # Lazy import to avoid circular imports at module load time
+        from app.agent.evaluator import evaluate_message
+        from app.agent.self_correction import run_self_correction
+
+        sc_result = run_self_correction(
             profile=profile,
             product_description=product_description,
             tone=tone_enum,
+            generate_fn=_generate_message_llm,
+            evaluate_fn=evaluate_message,
         )
 
-        message: OutreachMessage = _generate_message_llm(prompt)
-        result = message.model_dump()
-        logger.info("[Tool] generate_message succeeded for %s", profile_name)
-        return {"success": True, "message": result}
+        logger.info(
+            "[Tool] generate_message succeeded — attempts=%d improved=%s score=%.2f",
+            sc_result.attempt_count,
+            sc_result.improved,
+            sc_result.final_evaluation.overall_score,
+        )
+        return {
+            "success": True,
+            "message": sc_result.final_message.model_dump(),
+            "self_correction": {
+                "attempt_count": sc_result.attempt_count,
+                "improved": sc_result.improved,
+                "final_score": sc_result.final_evaluation.overall_score,
+                "passed": sc_result.final_evaluation.passed,
+            },
+        }
 
     except ValidationError as exc:
         logger.warning("[Tool] generate_message validation error: %s", exc)
@@ -183,6 +204,7 @@ def _run_generate_message(
             "success": False,
             "error": {"type": "unexpected_error", "message": str(exc)},
         }
+
 
 
 # ---------------------------------------------------------------------------

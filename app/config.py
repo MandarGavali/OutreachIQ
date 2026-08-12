@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # --- Agent ---
     AGENT_MAX_TURNS: int = 6
 
+    # --- Self-Correction ---
+    SELF_CORRECTION_ENABLED: bool = True
+    SELF_CORRECTION_SCORE_THRESHOLD: float = 7.0  # 0–10; pass if score >= threshold
+    MAX_SELF_CORRECTION_ATTEMPTS: int = 2          # max generation attempts (incl. first)
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
