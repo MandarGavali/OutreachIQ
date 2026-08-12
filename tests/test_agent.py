@@ -716,6 +716,9 @@ def test_generate_outreach_module_function_delegates_to_agent():
         core._default_agent = None
 
         request = _make_request()
-        result = generate_outreach(request)
+        try:
+            result = generate_outreach(request)
+        finally:
+            core._default_agent = None
 
     assert result == _VALID_OUTREACH

@@ -50,20 +50,20 @@ FastAPI Response
 
 Current Limitations:
 
-Profile input currently uses pasted profile text.
-LinkedIn authentication/session scraping is not implemented.
-The application does not automatically send LinkedIn messages.
-The application does not perform mass automated outreach.
-Future Improvements
+- LinkedIn authentication/session scraping is not implemented; profile acquisition currently uses deterministic fixtures/adapters in the demo.
+- The application does not automatically send LinkedIn messages.
+- The application does not perform mass automated outreach.
 
-
+## Future Improvements
 
 Potential future improvements include:
 
-More robust profile parsing
-Public-profile data extraction where appropriate
-Better personalization evaluation
-Message quality scoring
+- Live public-profile data extraction
+- Message quality scoring persistence
+- Additional LLM providers
+- Improved batch processing
+- Persistent outreach history
+- Authentication and user accounts
 Additional LLM providers
 Improved batch processing
 Persistent outreach history

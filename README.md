@@ -39,26 +39,27 @@ Instead of producing generic outreach, OutreachIQ uses an AI agent and tool call
               Pydantic Validation
                       │
                       ▼
-              LangChain AI Agent
+             Custom Tool-Calling Agent
                       │
              ┌────────┴────────┐
              ▼                 ▼
-      scrape_profile     generate_outreach
+      scrape_profile     generate_message
              │                 │
              ▼                 ▼
-        Profile Parser    Prompt Builder
-                               │
-                               ▼
-                           Gemini LLM
-                               │
-                               ▼
-                       OutreachMessage
-                               │
-                               ▼
-                         API Response
+   ProfileScraper Pipeline  Self-Correction Evaluator
+             │                 │
+             ▼                 ▼
+          Cache / HTTP      Gemini LLM
+             │                 │
+             └────────┬────────┘
+                      ▼
+                 OutreachMessage
+                      │
+                      ▼
+                API Response
 ```
 
-The agent is designed to call the profile extraction tool before generating the final outreach message.
+The agent is designed to call the profile extraction tool before generating the final outreach message, which is then automatically evaluated and improved via a self-correction loop.
 
 ---
 
