@@ -24,6 +24,6 @@ class BatchRequest(BaseModel):
     requests: list[OutreachRequest] = Field(
         ...,
         min_length=1,
-        max_length=1000,
-        description="List of outreach requests.",
-    )
+        max_length=10,
+        description="List of outreach requests. Maximum 10 per batch.",
+    )

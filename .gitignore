@@ -5,6 +5,13 @@ venv/
 # Environment Variables
 .env
 
+# Playwright authentication session
+app/auth/storage_state.json
+
+# Playwright artifacts
+playwright-report/
+test-results/
+
 # Python
 __pycache__/
 *.py[cod]
