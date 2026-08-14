@@ -16,3 +16,17 @@ class BatchResponse(BaseModel):
     results: list[OutreachMessage] = Field(
         default_factory=list
     )
+
+
+class BatchPDFItemResult(BaseModel):
+    filename: str
+    status: str = Field(..., description="'success' or 'error'")
+    result: OutreachMessage | None = None
+    error: str | None = None
+
+
+class BatchPDFResult(BaseModel):
+    total: int
+    successful: int
+    failed: int
+    results: list[BatchPDFItemResult] = Field(default_factory=list)

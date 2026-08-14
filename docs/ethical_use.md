@@ -18,11 +18,11 @@ The system never sends messages automatically.
 
 ---
 
-### 2. Public Information Only
+### 2. User-Provided Data Only
 
-The application is designed to work with information that is publicly available or explicitly provided by the user.
+The application relies entirely on user-provided profile data (pasted text or uploaded PDFs) and does NOT perform unauthorized scraping of LinkedIn or circumvent platform access controls.
 
-It does not access private profiles or restricted content.
+Users are responsible for ensuring they have the right to process the profile data they provide.
 
 ---
 

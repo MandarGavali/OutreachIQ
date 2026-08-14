@@ -1,19 +1,21 @@
 """
 Concrete profile acquisition adapters for OutreachIQ V2.
 
-This module ships two adapters:
+This module ships three adapters:
 
 1. FixtureProfileAdapter
    A deterministic, in-memory adapter for testing and development.
    Register fixture profiles by URL and it returns them instantly.
-   This is the *correct* adapter for the current phase: we do not
-   have a permitted real-time data source, and we do NOT implement
-   unauthorized scraping.
 
 2. TextProfileAdapter
-   Wraps the existing V1/parser.py pathway so legacy callers that
-   supply pasted profile text can still flow through the new
-   acquisition interface.
+   Accepts user-pasted profile text and converts it into RawProfileData
+   via the shared parse_profile_text() parser.
+   No network calls.  No LinkedIn access required.
+
+3. PDFProfileAdapter
+   Accepts a path to a user-uploaded PDF and extracts text using pypdf.
+   The extracted text is then parsed by parse_profile_text().
+   See app/scraper/pdf_adapter.py.
 
 IMPORTANT — What is NOT here:
   - No CAPTCHA bypass
@@ -23,15 +25,17 @@ IMPORTANT — What is NOT here:
   - No unauthorized LinkedIn DOM scraping at scale
 
 The browser_manager / Playwright infrastructure in the repository is
-preserved for authorized browser workflows (e.g., authenticated human-
-assisted sessions) and can be injected into a future authorized adapter
-when a permitted data source is available.
+preserved for historical/experimental purposes only.  It is NOT required
+by the production acquisition path (text or PDF inputs).
+
+Production profile acquisition does not use LinkedIn DOM scraping.
 """
 
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.scraper.acquisition import ProfileAcquisition, RawProfileData
 from app.scraper.exceptions import (
@@ -39,7 +43,7 @@ from app.scraper.exceptions import (
     ProfileNotFoundError,
     ProfileTimeoutError,
 )
-from app.scraper.parser import parse_profile
+from app.scraper.parser import parse_profile_text
 
 logger = logging.getLogger(__name__)
 
@@ -111,60 +115,72 @@ class FixtureProfileAdapter:
 
 
 # ---------------------------------------------------------------------------
-# Text adapter — wraps the V1 parser pathway
+# Text adapter — user-pasted profile text
 # ---------------------------------------------------------------------------
 
 class TextProfileAdapter:
     """
-    Adapter that accepts pasted profile text and converts it via the
-    existing parser.py into RawProfileData.
+    Adapter that accepts user-pasted profile text.
 
-    This preserves the V1 / current API pathway where profile_url
-    contains the LinkedIn URL and the caller supplies raw profile text.
+    Converts free-form text into RawProfileData using the shared
+    parse_profile_text() parser.  No network calls are made.
 
-    The adapter does NOT make any network requests.
+    This adapter does NOT satisfy the ProfileAcquisition URL-based protocol
+    because it does not take a URL as its primary input.  Use
+    ProfileScraper.acquire_from_input(ProfileInput(..., source_type="text"))
+    as the entry point.
 
     Usage::
 
         adapter = TextProfileAdapter()
         raw = adapter.acquire_from_text(
-            profile_text="Jane Doe\\nML Engineer\\n...",
-            profile_url="https://linkedin.com/in/jane-doe",
+            profile_text="Alex Rivera\\nAI Engineer...",
+            profile_url="https://linkedin.com/in/alex",  # optional
         )
     """
 
     def acquire_from_text(
-        self, profile_text: str, profile_url: str
+        self,
+        profile_text: str,
+        profile_url: Optional[str] = None,
     ) -> RawProfileData:
         """
         Parse pasted profile text and return RawProfileData.
 
         Args:
-            profile_text: Raw pasted text from the profile page.
-            profile_url: The canonical profile URL.
+            profile_text: Raw pasted text from the profile.
+            profile_url: Optional URL for metadata/traceability.
 
         Returns:
             RawProfileData populated from the parsed text.
 
         Raises:
-            ProfileAcquisitionError: If parsing fails.
+            ProfileAcquisitionError: If parsing fails or text is empty.
         """
+        if not profile_text or not profile_text.strip():
+            raise ProfileAcquisitionError("Profile text must not be empty.")
+
         try:
-            scraped = parse_profile(profile_text, profile_url)
-        except Exception as exc:
+            raw = parse_profile_text(
+                profile_text,
+                profile_url=profile_url,
+                source="text",
+            )
+        except ValueError as exc:
             raise ProfileAcquisitionError(
                 f"Failed to parse profile text: {exc}"
             ) from exc
+        except Exception as exc:
+            raise ProfileAcquisitionError(
+                f"Unexpected error parsing profile text: {exc}"
+            ) from exc
 
-        return RawProfileData(
-            profile_url=profile_url,
-            name=scraped.name,
-            headline=scraped.headline,
-            about=scraped.about or "",
-            recent_activity=list(scraped.recent_activity),
-            source="text_paste",
-            fetched_at=datetime.now(timezone.utc),
+        logger.debug(
+            "TextProfileAdapter: parsed profile name=%r url=%s",
+            raw.name,
+            profile_url or "(none)",
         )
+        return raw
 
     # Satisfy the ProfileAcquisition protocol by delegating acquire()
     # to acquire_from_text with an empty text body.  In practice callers

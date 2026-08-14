@@ -70,7 +70,11 @@ def normalize_profile(raw: RawProfileData) -> ScrapedProfile:
         ProfileValidationError: If the name is missing or normalization
                                  produces invalid output.
     """
-    logger.debug("Normalizing profile from source=%s url=%s", raw.source, raw.profile_url)
+    logger.debug(
+        "Normalizing profile from source=%s url=%s",
+        raw.source,
+        raw.profile_url or "(none)",
+    )
 
     # --- name ---
     name = _clean(raw.name)
@@ -111,7 +115,7 @@ def normalize_profile(raw: RawProfileData) -> ScrapedProfile:
 
     try:
         profile = ScrapedProfile(
-            profile_url=raw.profile_url,
+            profile_url=raw.profile_url,  # Optional[str] — may be None for text/PDF
             name=name,
             headline=headline,
             about=about,
@@ -122,5 +126,5 @@ def normalize_profile(raw: RawProfileData) -> ScrapedProfile:
             f"Profile failed Pydantic validation: {exc}"
         ) from exc
 
-    logger.debug("Normalization complete for url=%s", raw.profile_url)
+    logger.debug("Normalization complete for url=%s", raw.profile_url or "(none)")
     return profile

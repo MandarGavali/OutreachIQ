@@ -9,11 +9,30 @@ Ties together:
   5. Normalization → ScrapedProfile
   6. Cache population
 
+Acquisition paths
+-----------------
+Two distinct paths are supported:
+
+  URL / Fixture path (original)
+    profile_scraper.scrape(profile_url)
+      → URL validation → cache → rate limiter → FixtureProfileAdapter
+      → RawProfileData → normalize_profile() → ScrapedProfile
+
+  User-input path (new — text or PDF)
+    profile_scraper.acquire_from_input(ProfileInput)
+      → TextProfileAdapter or PDFProfileAdapter (no URL validation, no
+        rate limiter, no cache — local parsing is instant and stateless)
+      → RawProfileData → normalize_profile() → ScrapedProfile
+
+The Agent and Generator always receive a ScrapedProfile and are
+completely unaware of which path was used.
+
+Production profile acquisition does not use LinkedIn DOM scraping.
+The browser_manager / Playwright infrastructure is preserved for
+historical/experimental reference only and is not called by this module.
+
 The scrape_profile() function (legacy V1 API) is preserved unchanged
 so existing callers and tests continue to work without modification.
-
-New callers should use ProfileScraper directly for dependency
-injection and testability.
 """
 
 from __future__ import annotations
@@ -22,7 +41,8 @@ import logging
 
 from app.config import settings
 from app.models.profile_models import ScrapedProfile
-from app.scraper.acquisition import ProfileAcquisition
+from app.scraper.acquisition import ProfileAcquisition, ProfileInput
+from app.scraper.adapters import FixtureProfileAdapter, TextProfileAdapter
 from app.scraper.cache import ProfileCache, normalize_profile_url
 from app.scraper.exceptions import ProfileAcquisitionError
 from app.scraper.normalizer import normalize_profile
@@ -96,6 +116,10 @@ class ProfileScraper:
         self._rate_limiter = rate_limiter
         self._cache = cache
 
+    # ------------------------------------------------------------------
+    # URL-based acquisition (original path — fixture / future adapters)
+    # ------------------------------------------------------------------
+
     def scrape(self, profile_url: str) -> ScrapedProfile:
         """
         Run the full acquisition pipeline for a single profile URL.
@@ -153,6 +177,63 @@ class ProfileScraper:
             self._cache.set(normalized_key, profile)
 
         return profile
+
+    # ------------------------------------------------------------------
+    # User-input acquisition (new path — text or PDF)
+    # ------------------------------------------------------------------
+
+    def acquire_from_input(self, profile_input: ProfileInput) -> ScrapedProfile:
+        """
+        Acquire a profile from user-provided input (text or PDF).
+
+        Text and PDF inputs bypass URL validation, rate limiting, and
+        caching — local parsing is instant and stateless.
+
+        Fixture inputs delegate to the URL-based scrape() path.
+
+        Args:
+            profile_input: A typed ProfileInput describing the source.
+
+        Returns:
+            Canonical ScrapedProfile.
+
+        Raises:
+            ProfileAcquisitionError: If parsing or normalization fails.
+        """
+        source = profile_input.source_type
+
+        if source == "fixture":
+            # Delegate to the existing URL-based path
+            if not profile_input.profile_url:
+                raise ProfileAcquisitionError(
+                    "profile_url is required for source_type='fixture'."
+                )
+            return self.scrape(profile_input.profile_url)
+
+        if source == "text":
+            logger.info("Text acquisition started (no rate limiting or caching)")
+            text_adapter = TextProfileAdapter()
+            raw = text_adapter.acquire_from_text(
+                profile_text=profile_input.profile_text or "",
+                profile_url=profile_input.profile_url,
+            )
+            return normalize_profile(raw)
+
+        if source == "pdf":
+            logger.info("PDF acquisition started (no rate limiting or caching)")
+            # Import here to avoid pulling pypdf into every import path
+            from app.scraper.pdf_adapter import PDFProfileAdapter
+            pdf_max = getattr(settings, "PDF_MAX_FILE_SIZE_MB", 10) * 1024 * 1024
+            pdf_adapter = PDFProfileAdapter(max_file_size_bytes=pdf_max)
+            raw = pdf_adapter.acquire_from_pdf(
+                pdf_path=profile_input.pdf_path or "",
+                profile_url=profile_input.profile_url,
+            )
+            return normalize_profile(raw)
+
+        raise ProfileAcquisitionError(
+            f"Unknown source_type: {source!r}. Expected 'text', 'pdf', or 'fixture'."
+        )
 
     def scrape_batch(self, profile_urls: list[str]) -> list[ScrapedProfile]:
         """

@@ -14,6 +14,5 @@
 - [x] CSV Export functions (Tested and verified)
 
 ## Pending for Real Production Use
-- Integrate a live scraping adapter rather than deterministic mocks.
-- Configure secure external proxy rotation if moving to live LinkedIn scraping.
 - Wire into a persistent database (Postgres/Redis) for cache and batch state.
+- (Live LinkedIn scraping is explicitly NOT planned; acquisition relies on user-provided text/PDF inputs and fixtures.)

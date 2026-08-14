@@ -147,7 +147,7 @@ def test_scrape_profile_tool_call_executed(monkeypatch):
 
     called_with = {}
 
-    def fake_scrape(profile_url: str) -> dict:
+    def fake_scrape(profile_source="fixture", profile_url="", profile_text="") -> dict:
         called_with["url"] = profile_url
         return fake_profile_result
 
@@ -172,7 +172,7 @@ def test_multi_tool_sequence(monkeypatch):
     """Verify scrape_profile is called before generate_message."""
     call_order = []
 
-    def fake_scrape(profile_url: str) -> dict:
+    def fake_scrape(profile_source="fixture", profile_url="", profile_text="") -> dict:
         call_order.append("scrape_profile")
         return {
             "success": True,
@@ -323,7 +323,7 @@ def test_malformed_args_returns_structured_error():
     assert tool_msgs
     data = json.loads(tool_msgs[0].content)
     assert data["success"] is False
-    assert "invalid_tool_arguments" in data["error"]["type"]
+    assert "missing_profile_url" in data["error"]["type"]
 
 
 # ===========================================================================
@@ -381,7 +381,7 @@ def test_max_turns_custom_value():
 
 def test_scrape_profile_invalid_url_returns_error():
     """_run_scrape_profile with an invalid URL returns a structured error."""
-    result = _run_scrape_profile("not-a-url")
+    result = _run_scrape_profile(profile_url="not-a-url")
     assert result["success"] is False
     assert "error" in result
 
@@ -402,7 +402,7 @@ def test_scrape_profile_not_found_returns_error(monkeypatch):
     )
     monkeypatch.setattr("app.agent.tools._default_scraper", test_scraper)
 
-    result = _run_scrape_profile(_VALID_PROFILE_URL)
+    result = _run_scrape_profile(profile_url=_VALID_PROFILE_URL)
     assert result["success"] is False
     assert "profile_acquisition_error" in result["error"]["type"]
 
@@ -426,7 +426,7 @@ def test_scrape_profile_returns_valid_structure(monkeypatch):
     )
     monkeypatch.setattr("app.agent.tools._default_scraper", test_scraper)
 
-    result = _run_scrape_profile(_VALID_PROFILE_URL)
+    result = _run_scrape_profile(profile_url=_VALID_PROFILE_URL)
     assert result["success"] is True
     assert result["profile"]["name"] == "Jane Doe"
 
@@ -497,7 +497,7 @@ def test_generation_cannot_fabricate_profile(monkeypatch):
         },
     }
 
-    def fake_scrape(profile_url: str) -> dict:
+    def fake_scrape(profile_source="fixture", profile_url="", profile_text="") -> dict:
         scrape_called.append(profile_url)
         return fake_profile
 
@@ -568,7 +568,7 @@ def test_prompt_injection_in_profile_does_not_alter_behavior(monkeypatch):
     )
     monkeypatch.setattr("app.agent.tools._default_scraper", test_scraper)
 
-    scrape_result = _run_scrape_profile(_VALID_PROFILE_URL)
+    scrape_result = _run_scrape_profile(profile_url=_VALID_PROFILE_URL)
 
     # Tool returned data successfully (injection text is just field values)
     assert scrape_result["success"] is True
@@ -580,7 +580,7 @@ def test_prompt_injection_in_profile_does_not_alter_behavior(monkeypatch):
     def fake_generate(profile_name, headline, about, recent_activity, product_description, tone="casual") -> dict:
         return {"success": True, "message": _VALID_OUTREACH.model_dump()}
 
-    monkeypatch.setitem(AVAILABLE_TOOLS, "scrape_profile", lambda profile_url: scrape_result)
+    monkeypatch.setitem(AVAILABLE_TOOLS, "scrape_profile", lambda profile_source="fixture", profile_url="", profile_text="": scrape_result)
     monkeypatch.setitem(AVAILABLE_TOOLS, "generate_message", fake_generate)
 
     responses = [
@@ -637,7 +637,7 @@ def test_integration_full_flow(monkeypatch):
     # Patch LLM generate so we don't hit the real Gemini API
     monkeypatch.setattr("app.agent.tools._generate_message_llm", lambda prompt: _VALID_OUTREACH)
 
-    scrape_response = _run_scrape_profile(_VALID_PROFILE_URL)
+    scrape_response = _run_scrape_profile(profile_url=_VALID_PROFILE_URL)
     assert scrape_response["success"] is True
 
     profile_data = scrape_response["profile"]
@@ -675,9 +675,16 @@ def test_available_tools_registry():
 
 
 def test_scrape_profile_arg_schema_rejects_missing_url():
-    """ScrapeProfileArgs must reject missing profile_url."""
-    with pytest.raises(ValidationError):
-        ScrapeProfileArgs()
+    """ScrapeProfileArgs with source='fixture' and no profile_url → validation error at runtime.
+    
+    Note: ScrapeProfileArgs itself no longer makes profile_url required at the Pydantic
+    level (it defaults to empty string). The validation happens at runtime inside
+    _run_scrape_profile when it detects missing profile_url for fixture source.
+    This test verifies that behavior.
+    """
+    result = _run_scrape_profile(profile_source="fixture", profile_url="")
+    assert result["success"] is False
+    assert result["error"]["type"] == "missing_profile_url"
 
 
 def test_generate_message_arg_schema_rejects_missing_product():

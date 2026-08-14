@@ -250,17 +250,19 @@ http://localhost:8000/docs
 
 ## 📡 API Endpoints
 
-### Generate a single message
+### Generate a single message (JSON)
 
 ```http
 POST /generate
 ```
 
+Accepts either `profile_text` (raw pasted profile text) or `profile_url` (for pre-registered fixtures).
+
 Example request:
 
 ```json
 {
-  "profile_url": "John Doe\nAI Engineer at OpenAI\nAbout\nBuilding AI agents using LangChain.\nRecent Activity\nPublished a post about RAG.",
+  "profile_text": "John Doe\nAI Engineer at OpenAI\nAbout\nBuilding AI agents using LangChain.\nRecent Activity\n- Published a post about RAG.",
   "product_description": "AI-powered automation platform for building intelligent business workflows.",
   "tone": "casual"
 }
@@ -278,6 +280,21 @@ Example response:
 
 ---
 
+### Generate from PDF (Multipart)
+
+```http
+POST /generate-from-pdf
+```
+
+Accepts a PDF file upload containing the profile text. The PDF is processed in-memory and deleted immediately.
+
+Parameters (multipart/form-data):
+- `profile_pdf`: The PDF file upload
+- `product_description`: String description of your product
+- `tone`: e.g., "casual"
+
+---
+
 ### Generate messages in batch
 
 ```http
@@ -285,7 +302,6 @@ POST /generate-batch
 ```
 
 This endpoint accepts multiple outreach requests and processes them as a batch.
-
 The batch workflow is designed so that a failure for one profile does not necessarily prevent other profiles from being processed.
 
 ---

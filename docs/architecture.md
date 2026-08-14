@@ -13,19 +13,28 @@ personalized message generation.
 ```text
 User
  │
- ▼
-FastAPI
+ ├── POST /generate (JSON: profile_text or profile_url)
+ ├── POST /generate-from-pdf (Multipart: single PDF file)
+ └── POST /generate-batch-from-pdf (Multipart: multiple PDF files)
  │
  ▼
-Pydantic OutreachRequest
+Pydantic Request Models (OutreachRequest / ProfileInput)
  │
  ▼
 Custom Agent Core (OutreachAgent)
  │
- ├─── Turn 1: LLM → scrape_profile ──────► ProfileScraper
+ ├─── Turn 1: LLM → scrape_profile
+ │                  │
+ │                  ├── source='text' ───► TextProfileAdapter
+ │                  ├── source='pdf'  ───► PDFProfileAdapter (via endpoint setup)
+ │                  └── source='fixture' ─► URL validation → Cache → FixtureProfileAdapter
+ │                                              │
+ │                                         RawProfileData
+ │                                              │
+ │                                         normalize_profile()
  │                                              │
  │                                         ScrapedProfile
- │                                              │
+ │
  ├─── Turn 2: LLM → generate_message ─────► Self-Correction Orchestrator
  │                                              │
  │                                          Message Generation
@@ -44,13 +53,17 @@ Custom Agent Core (OutreachAgent)
 OutreachMessage (validated Pydantic model)
  │
  ▼
-FastAPI Response
+FastAPI Response (Batch processing provides isolated failure handling & CSV export)
 ```
 
+## CSV Export
+A dedicated endpoint `POST /export-csv` is provided. The frontend can pass the successful `OutreachMessage` results from a batch to receive a downloadable CSV string via a StreamingResponse, decoupled from the initial generation phase.
 
-Current Limitations:
+## Legacy Infrastructure
+The browser_manager and Playwright code paths exist for historical and experimental reference only. Production profile acquisition uses user-provided text or PDF input and does NOT perform unauthenticated LinkedIn DOM scraping.
 
-- LinkedIn authentication/session scraping is not implemented; profile acquisition currently uses deterministic fixtures/adapters in the demo.
+## Limitations
+
 - The application does not automatically send LinkedIn messages.
 - The application does not perform mass automated outreach.
 

@@ -23,6 +23,8 @@ from __future__ import annotations
 import json
 import logging
 
+from datetime import datetime, timezone
+
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field, ValidationError
 
@@ -30,7 +32,8 @@ from app.llm.gemini_client import generate_message as _generate_message_llm
 from app.models.profile_models import ScrapedProfile
 from app.models.request_models import Tone
 from app.models.response_models import OutreachMessage
-from app.scraper.adapters import FixtureProfileAdapter
+from app.scraper.acquisition import ProfileInput, RawProfileData
+from app.scraper.adapters import FixtureProfileAdapter, TextProfileAdapter
 from app.scraper.cache import ProfileCache
 from app.scraper.exceptions import ProfileAcquisitionError
 from app.scraper.profile_scraper import ProfileScraper
@@ -44,10 +47,41 @@ logger = logging.getLogger(__name__)
 # Uses the FixtureProfileAdapter.  In a real deployment this would be
 # replaced by an authorized adapter.  Tests can override _default_scraper
 # or pass a scraper directly to the tool functions via the helper below.
+#
+# The adapter is pre-loaded with a demo profile so the final_demo script
+# (and any other caller that uses DEMO_PROFILE_URL) can run the complete
+# pipeline without network access.
 # ---------------------------------------------------------------------------
 
+# Public constant so callers (demo scripts, tests) can reference the
+# pre-registered URL without hard-coding it in multiple places.
+DEMO_PROFILE_URL: str = "https://linkedin.com/in/alex-rivera"
+
+_fixture_adapter = FixtureProfileAdapter()
+_fixture_adapter.register(
+    DEMO_PROFILE_URL,
+    RawProfileData(
+        profile_url=DEMO_PROFILE_URL,
+        name="Alex Rivera",
+        headline="Head of Growth at TechScale — B2B SaaS | Revenue & Pipeline Strategy",
+        about=(
+            "I lead growth at TechScale, where I help B2B SaaS companies "
+            "build scalable outbound pipelines without burning out their SDR teams. "
+            "Previously scaled GTM at two Y Combinator companies from $0 to Series B. "
+            "Passionate about data-driven personalization and cutting through inbox noise."
+        ),
+        recent_activity=[
+            "Shared a post on why spray-and-pray cold outreach is dead in 2025",
+            "Commented on a LinkedIn thread about AI-assisted SDR workflows",
+            "Published an article: '5 outreach frameworks that actually get replies'",
+        ],
+        source="demo_fixture",
+        fetched_at=datetime(2025, 8, 14, 0, 0, 0, tzinfo=timezone.utc),
+    ),
+)
+
 _default_scraper = ProfileScraper(
-    acquisition=FixtureProfileAdapter(),
+    acquisition=_fixture_adapter,
     rate_limiter=RateLimiter(
         min_delay_seconds=0.0,
         max_delay_seconds=0.0,
@@ -61,9 +95,29 @@ _default_scraper = ProfileScraper(
 # ---------------------------------------------------------------------------
 
 class ScrapeProfileArgs(BaseModel):
+    profile_source: str = Field(
+        default="fixture",
+        description=(
+            "Acquisition source type. "
+            "'fixture' — look up a pre-registered profile by URL (requires profile_url). "
+            "'text' — parse user-pasted profile text (requires profile_text). "
+            "Default: 'fixture'."
+        ),
+    )
     profile_url: str = Field(
-        ...,
-        description="The HTTPS URL of the LinkedIn profile to acquire.",
+        default="",
+        description=(
+            "The HTTPS URL of the LinkedIn profile. "
+            "Required when profile_source='fixture'."
+        ),
+    )
+    profile_text: str = Field(
+        default="",
+        description=(
+            "Raw user-pasted profile text. "
+            "Required when profile_source='text'. "
+            "Include Name, Headline, About, and Recent Activity sections."
+        ),
     )
 
 
@@ -98,24 +152,77 @@ class GenerateMessageArgs(BaseModel):
 # Tool implementations — plain callables
 # ---------------------------------------------------------------------------
 
-def _run_scrape_profile(profile_url: str) -> dict:
+def _run_scrape_profile(
+    profile_source: str = "fixture",
+    profile_url: str = "",
+    profile_text: str = "",
+) -> dict:
     """
-    Acquire and return structured profile data for the given URL.
+    Acquire and return structured profile data.
 
-    Uses the Phase 1 ProfileScraper pipeline:
-      URL validation → cache → rate limiter → adapter → normalizer → ScrapedProfile
+    Two acquisition modes:
 
-    Returns a JSON-serializable dict (profile.model_dump() with URL as str).
-    On failure, returns a structured error dict so the agent can decide how to proceed.
+      profile_source='fixture' (default)
+        Look up a pre-registered profile by profile_url.
+        Pipeline: URL validation → cache → adapter → normalizer → ScrapedProfile
+
+      profile_source='text'
+        Parse user-pasted profile text via TextProfileAdapter.
+        No network calls.  No rate limiting.  No cache.
+        Requires profile_text to be non-empty.
+
+    Returns a JSON-serializable dict on success.
+    Returns a structured error dict on failure so the agent can recover.
     """
-    logger.info("[Tool] scrape_profile called for %s", profile_url)
+    logger.info(
+        "[Tool] scrape_profile called  source=%s  url=%r",
+        profile_source,
+        profile_url or "(none)",
+    )
     try:
-        profile: ScrapedProfile = _default_scraper.scrape(profile_url)
+        source = (profile_source or "fixture").strip().lower()
+
+        if source == "text":
+            if not profile_text or not profile_text.strip():
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "missing_profile_text",
+                        "message": (
+                            "profile_text must be non-empty when "
+                            "profile_source='text'."
+                        ),
+                    },
+                }
+            profile_input = ProfileInput(
+                source_type="text",
+                profile_text=profile_text,
+                profile_url=profile_url or None,
+            )
+            profile: ScrapedProfile = _default_scraper.acquire_from_input(profile_input)
+        else:
+            # 'fixture' (default) — URL-based lookup
+            if not profile_url or not profile_url.strip():
+                return {
+                    "success": False,
+                    "error": {
+                        "type": "missing_profile_url",
+                        "message": (
+                            "profile_url must be non-empty when "
+                            "profile_source='fixture'."
+                        ),
+                    },
+                }
+            logger.info("[Tool] scrape_profile called for %s", profile_url)
+            profile = _default_scraper.scrape(profile_url)
+
         result = profile.model_dump()
-        # Ensure profile_url is a string (Pydantic HttpUrl → str)
-        result["profile_url"] = str(result["profile_url"])
-        logger.info("[Tool] scrape_profile succeeded for %s", profile_url)
+        # Ensure profile_url is a plain string (may be None)
+        if result.get("profile_url") is not None:
+            result["profile_url"] = str(result["profile_url"])
+        logger.info("[Tool] scrape_profile succeeded for %s", profile_url or profile.name)
         return {"success": True, "profile": result}
+
     except ProfileAcquisitionError as exc:
         logger.warning("[Tool] scrape_profile acquisition error: %s", exc)
         return {
@@ -156,7 +263,7 @@ def _run_generate_message(
             tone_enum = Tone.CASUAL
 
         profile = ScrapedProfile(
-            profile_url="https://linkedin.com/in/unknown",
+            profile_url=None,  # generate_message does not require a URL
             name=profile_name,
             headline=headline,
             about=about,
@@ -215,10 +322,14 @@ scrape_profile_tool = StructuredTool.from_function(
     func=_run_scrape_profile,
     name="scrape_profile",
     description=(
-        "Acquire structured profile information from a profile URL. "
-        "Call this FIRST before generate_message when a profile URL is supplied. "
+        "Acquire structured profile information from a profile source. "
+        "Supports two modes: "
+        "(1) profile_source='fixture' (default): look up a pre-registered profile "
+        "by profile_url — call this FIRST when a URL is supplied; "
+        "(2) profile_source='text': parse user-pasted profile text via profile_text — "
+        "call this when the user has pasted their profile text directly. "
         "Returns profile fields: name, headline, about, recent_activity. "
-        "Never call generate_message with a profile URL you have not scraped first."
+        "Never call generate_message without first calling scrape_profile."
     ),
     args_schema=ScrapeProfileArgs,
 )

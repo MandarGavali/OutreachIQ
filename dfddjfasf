@@ -1,0 +1,16 @@
+warning: in the working copy of 'app/agent/agent_core.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/agent/prompts.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/agent/tools.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/api/routes.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/models/profile_models.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/models/request_models.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/scraper/acquisition.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/scraper/adapters.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/scraper/normalizer.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/scraper/parser.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'app/scraper/profile_scraper.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/production_readiness.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/final_demo.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/test_agent.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/test_api.py', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/test_regression.py', LF will be replaced by CRLF the next time Git touches it

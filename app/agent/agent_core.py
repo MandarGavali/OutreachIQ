@@ -69,6 +69,48 @@ _ARG_SCHEMAS: dict[str, type] = {
 
 
 # ---------------------------------------------------------------------------
+# Content normalisation helper
+# ---------------------------------------------------------------------------
+
+def _coerce_content_to_str(content: Any) -> str:
+    """
+    Normalise a LangChain / Gemini message content value to a plain str.
+
+    ``response.content`` from ``ChatGoogleGenerativeAI`` may be:
+
+    * ``str`` — the common case for text-only responses.
+    * ``list`` — a list of content-part dicts when Gemini returns
+      structured / multimodal content, e.g.::
+
+          [{'type': 'text', 'text': 'Here is your answer...'}]
+
+    Passing a list directly to ``str.strip()`` raises::
+
+        AttributeError: 'list' object has no attribute 'strip'
+
+    This function extracts and joins text from all ``type='text'`` parts,
+    or falls back to ``str()`` for any unexpected type.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, str):
+                parts.append(part)
+            elif isinstance(part, dict):
+                # Standard LangChain content-part format
+                if part.get("type") == "text":
+                    parts.append(part.get("text", ""))
+                else:
+                    # Non-text part (image, etc.) — skip silently
+                    pass
+        return "".join(parts)
+    # Fallback for any other unexpected type
+    return str(content)
+
+
+# ---------------------------------------------------------------------------
 # OutreachAgent — the custom loop
 # ---------------------------------------------------------------------------
 
@@ -111,13 +153,21 @@ class OutreachAgent:
     # Public entry point
     # ------------------------------------------------------------------
 
-    def run(self, request: OutreachRequest) -> OutreachMessage:
+    def run(
+        self,
+        request: OutreachRequest,
+        pre_scraped_profile: Any | None = None,
+    ) -> OutreachMessage:
         """
         Execute the agent loop for a single OutreachRequest.
 
         Args:
-            request: Validated OutreachRequest with profile_url,
+            request: Validated OutreachRequest with profile_url or profile_text,
                      product_description, and tone.
+            pre_scraped_profile: Optional ScrapedProfile already acquired
+                                 upstream (e.g. from PDF adapter).  When
+                                 supplied the agent skips the scrape_profile
+                                 tool call and goes straight to generate_message.
 
         Returns:
             OutreachMessage produced by the generate_message tool.
@@ -126,11 +176,16 @@ class OutreachAgent:
             AgentMaxTurnsError: Turn budget exhausted without a final answer.
             AgentError: Any other agent-level failure.
         """
-        logger.info("[Agent] Started for profile_url=%s", request.profile_url)
+        source = (
+            f"url={request.profile_url}"
+            if request.profile_url
+            else "text_input"
+        )
+        logger.info("[Agent] Started for source=%s", source)
 
         messages: list[BaseMessage] = [
             SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=self._build_user_message(request)),
+            HumanMessage(content=self._build_user_message(request, pre_scraped_profile)),
         ]
 
         turn = 0
@@ -160,7 +215,14 @@ class OutreachAgent:
                 continue
 
             # --- No tool calls: the LLM produced a final response ---
-            final_text = response.content
+            # response.content from ChatGoogleGenerativeAI can be:
+            #   - str  (the normal case)
+            #   - list (content-part list, e.g. [{'type': 'text', 'text': '...'}])
+            # We normalise to str here so _parse_final_response always
+            # receives a plain string, preventing the 'list has no attribute
+            # strip' crash.
+            raw_content = response.content
+            final_text = _coerce_content_to_str(raw_content)
             logger.info("[Agent] Turn %d: final response received", turn)
             return self._parse_final_response(final_text)
 
@@ -176,7 +238,40 @@ class OutreachAgent:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _build_user_message(request: OutreachRequest) -> str:
+    def _build_user_message(
+        request: OutreachRequest,
+        pre_scraped_profile: Any | None = None,
+    ) -> str:
+        """
+        Build the human turn that kicks off the agent loop.
+
+        When the user provided text or a pre-scraped profile, the message
+        tells the LLM to use source_type='text' for the scrape_profile tool
+        call so it goes through the TextProfileAdapter.
+        """
+        if pre_scraped_profile is not None:
+            # Profile already acquired — tell the agent to call generate_message
+            # directly with the known profile fields.
+            return (
+                "The profile has already been acquired. "
+                "Call generate_message directly with the following data.\n\n"
+                f"profile_name: {pre_scraped_profile.name}\n"
+                f"headline: {pre_scraped_profile.headline}\n"
+                f"about: {pre_scraped_profile.about}\n"
+                f"recent_activity: {pre_scraped_profile.recent_activity}\n\n"
+                f"Product / Service:\n{request.product_description}\n\n"
+                f"Tone: {request.tone.value}"
+            )
+        if request.profile_text:
+            return (
+                "Generate a personalized LinkedIn outreach message.\n\n"
+                "Profile source: text (user-pasted)\n"
+                "Call scrape_profile with profile_source='text' and "
+                "profile_text set to the content below.\n\n"
+                f"Profile Text:\n{request.profile_text}\n\n"
+                f"Product / Service:\n{request.product_description}\n\n"
+                f"Tone: {request.tone.value}"
+            )
         return (
             "Generate a personalized LinkedIn outreach message.\n\n"
             f"Profile URL: {request.profile_url}\n\n"
@@ -287,10 +382,17 @@ class OutreachAgent:
         we attempt to extract JSON from the response, then fall back to
         a structured representation.
 
+        Args:
+            text: The final response text from the LLM.  Must be a str
+                  (callers should use _coerce_content_to_str first).
+
         Raises:
             AgentError: If the final response cannot be parsed into
                         a valid OutreachMessage.
         """
+        # Defensive guard: if a list slipped through, coerce it.
+        if not isinstance(text, str):
+            text = _coerce_content_to_str(text)
         if not text or not text.strip():
             raise AgentError("Agent produced an empty final response.")
 
@@ -311,21 +413,31 @@ class OutreachAgent:
             except (json.JSONDecodeError, ValidationError):
                 pass
 
-        # The LLM produced non-JSON text — wrap it into the response model.
-        # This is a best-effort fallback for when the LLM doesn't follow the
-        # JSON-only instruction.  It will fail Pydantic validation if the text
-        # is too short to meet the message field min_length.
-        try:
-            return OutreachMessage(
-                recipient_name="Unknown",
-                message=text.strip()[:1000],
-                reason_for_outreach="Generated by agent (non-JSON response).",
-            )
-        except ValidationError as exc:
-            raise AgentError(
-                f"Agent final response could not be parsed into OutreachMessage: {exc}\n"
-                f"Raw response: {text[:200]!r}"
-            ) from exc
+        # The LLM produced non-JSON text.
+        #
+        # IMPORTANT: Do NOT wrap arbitrary LLM text into a fake OutreachMessage
+        # with recipient_name="Unknown".  That would silently pass off a failed
+        # generation as a successful outreach message.
+        #
+        # If the text is long enough to plausibly be an actual outreach message
+        # (≥ 50 chars — matching the OutreachMessage.message min_length), we
+        # attempt a best-effort wrap.  Otherwise we raise AgentError so the
+        # caller gets a structured failure, not a fake success.
+        stripped = text.strip()
+        if len(stripped) >= 50:  # OutreachMessage.message min_length
+            try:
+                return OutreachMessage(
+                    recipient_name="Unknown",
+                    message=stripped[:1000],
+                    reason_for_outreach="Generated by agent (non-JSON response).",
+                )
+            except ValidationError:
+                pass  # fall through to AgentError
+
+        raise AgentError(
+            f"Agent final response could not be parsed into OutreachMessage. "
+            f"Raw response ({len(text)} chars): {text[:200]!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -343,7 +455,10 @@ def _get_default_agent() -> OutreachAgent:
     return _default_agent
 
 
-def generate_outreach(request: OutreachRequest) -> OutreachMessage:
+def generate_outreach(
+    request: OutreachRequest,
+    pre_scraped_profile: Any | None = None,
+) -> OutreachMessage:
     """
     Public entry point — preserves the existing API surface consumed by routes.py.
 
@@ -351,6 +466,9 @@ def generate_outreach(request: OutreachRequest) -> OutreachMessage:
 
     Args:
         request: Validated OutreachRequest.
+        pre_scraped_profile: Optional already-acquired ScrapedProfile
+                             (supplied by the PDF endpoint so the agent
+                             can skip the scrape_profile tool call).
 
     Returns:
         OutreachMessage.
@@ -358,4 +476,4 @@ def generate_outreach(request: OutreachRequest) -> OutreachMessage:
     Raises:
         AgentError, AgentMaxTurnsError on failure.
     """
-    return _get_default_agent().run(request)
+    return _get_default_agent().run(request, pre_scraped_profile=pre_scraped_profile)

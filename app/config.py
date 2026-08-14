@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     PROFILE_CACHE_TTL_SECONDS: float = 300.0   # 5 minutes
     PROFILE_MAX_BATCH_SIZE: int = 10
 
+    # --- PDF acquisition ---
+    PDF_MAX_FILE_SIZE_MB: int = 10             # maximum upload size in megabytes
+
     # --- Agent ---
     AGENT_MAX_TURNS: int = 6
 
